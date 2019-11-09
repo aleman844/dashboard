@@ -49,7 +49,7 @@ app.layout = html.Div(children=[
                             html.Div(
                                 className="two columns",
                                 children=[
-                                    html.H6("Select Exchange",),
+                                    html.H6("Exchange",),
                                     dcc.RadioItems(
                                         id="exchange-select",
                                         options=[
@@ -65,7 +65,7 @@ app.layout = html.Div(children=[
                             html.Div(
                                 className="two columns",
                                 children=[
-                                    html.H6("Select Leverage",),
+                                    html.H6("Leverage",),
                                     dcc.RadioItems(
                                         id="leverage-select",
                                         options=[
@@ -81,7 +81,7 @@ app.layout = html.Div(children=[
                             html.Div(
                                 className="three columns",
                                 children= [
-                                        html.H6("Select a Date Range",),
+                                        html.H6("Date Range",),
                                         dcc.DatePickerRange(
                                         id='date-range-select', # The id of the DatePicker, its always very important to set an Id for all our components
                                         start_date=df['Entry time'].min(), # The start_date is going to be the min of Order Date in our dataset
@@ -159,8 +159,7 @@ app.layout = html.Div(children=[
                                 },
                                 page_current=0,
                                 page_size=PAGE_SIZE,
-                                page_action='custom'
-                                
+                                page_action='custom'                     
                             )
                         ]
                     ),
@@ -190,6 +189,20 @@ app.layout = html.Div(children=[
 ])
 
 #******************CALL BACK FUNCTIONS*******************************
+#Dates call back function
+@app.callback(
+    [        
+        Output('date-range-select', 'start_date'),
+        Output('date-range-select', 'end_date'),
+    ], 
+    [
+        Input('exchange-select', 'value'),
+    ]
+)
+def update_dates(exchange_value):
+    return df[df["Exchange"]==exchange_value]["Entry time"].min(),df[df["Exchange"]==exchange_value]["Entry time"].max()
+
+
 def calc_returns_over_month(dff):
     out = []
 
@@ -238,7 +251,9 @@ def filter_df(d,m=None, e=None, s_date=None, e_date=None):
     ret =  d[ (d['Entry time']>=  s_date) & (d['Entry time']<=e_date) & (d['Exchange'].isin(e)) & \
         (d['Margin'].isin(m))  ]
     return ret
-#Call back function
+
+
+#General Call back function
 @app.callback(
     [        
         Output('market-returns', 'children'),
@@ -259,7 +274,7 @@ def filter_df(d,m=None, e=None, s_date=None, e_date=None):
         Input('table', "page_size")
     ]
 )
-def update_date(exchange_value, leverage_value, s_date_value, e_date_value, p_c, p_s):
+def udate_graphs(exchange_value, leverage_value, s_date_value, e_date_value, p_c, p_s):
     #Filter data
     df_temp = filter_df(df, e=exchange_value, m=leverage_value, s_date=s_date_value, e_date=e_date_value )
     df_temp['YearMonth'] =  df_temp['Entry time'].dt.strftime('%y-%m')
@@ -314,7 +329,7 @@ def update_date(exchange_value, leverage_value, s_date_value, e_date_value, p_c,
                          {'data': data_balance ,'layout': {'title': 'Balance over time'}}
 
 if __name__ == "__main__":
-    #app.run_server(debug=True)
-    app.run_server(debug=True, host="0.0.0.0", port="8080")
+    app.run_server(debug=True)
+    #app.run_server(debug=True, host="0.0.0.0", port="8080")
 
 
