@@ -329,7 +329,7 @@ def udate_graphs(exchange_value, leverage_value, s_date_value, e_date_value, p_c
                          {'data': data_balance ,'layout': {'title': 'Balance over time'}}
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
-    #app.run_server(debug=True, host="0.0.0.0", port="8080")
+    #app.run_server(debug=True)
+    app.run_server(debug=True, host="0.0.0.0", port="8080")
 
 
