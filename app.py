@@ -6,16 +6,21 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.graph_objects as go
 from dash.dependencies import Input, Output
-from datetime import datetime
 import plotly.express as px
 from sqlalchemy import create_engine
 
+#Database connection
 engine = create_engine('postgresql://nps_demo_user:Inicio.2019@demonps.ch5nt28naaaf.us-east-2.rds.amazonaws.com/strategy')
-df = pd.read_sql("SELECT * from trades", engine.connect(), parse_dates=('OCCURRED_ON_DATE',))
+sqlquery = "select to_timestamp(\"Entry time\", 'DDTH MON YYYY HH24:MI') as \
+ \"Entry time\",\"Number\", \"Trade type\", \"Exposure\",CAST(\"Entry balance\" AS NUMERIC), \
+ CAST(\"Exit balance\" AS  NUMERIC), CAST(\"Profit\" AS NUMERIC), CAST(\"Pnl (incl fees)\" AS NUMERIC) ,\"Exchange\", \"Margin\", \
+ CAST(\"BTC Price\" AS NUMERIC)   from trades"
+df = pd.read_sql(sqlquery, engine.connect())
 PAGE_SIZE = 10
+
+#Dash object
 app = dash.Dash(__name__, external_stylesheets=['https://codepen.io/uditagarwal/pen/oNvwKNP.css', 'https://codepen.io/uditagarwal/pen/YzKbqyV.css', ])
-
-
+#Dassh layout
 app.layout = html.Div(children=[
     html.Div(
             children=[
@@ -24,8 +29,6 @@ app.layout = html.Div(children=[
             className='study-browser-banner row'
     )]
 )
-
-
 app.layout = html.Div(children=[
     html.Div(
             children=[
@@ -83,6 +86,7 @@ app.layout = html.Div(children=[
                                         id='date-range-select', # The id of the DatePicker, its always very important to set an Id for all our components
                                         start_date=df['Entry time'].min(), # The start_date is going to be the min of Order Date in our dataset
                                         end_date=df['Entry time'].max(),
+                                        display_format='YYYY/MMM/DD'
                                         ),
 
                                 ]
@@ -93,7 +97,7 @@ app.layout = html.Div(children=[
                                 className="two columns indicator pretty_container",
                                 children=[
                                     html.P(id="strat-returns", className="indicator_value"),
-                                    html.P('Strategy Returns', className="twelve columns indicator_text"),
+                                    html.P('Stgy Returns', className="twelve columns indicator_text"),
                                 ]
                             ),
                             #Market returns
@@ -102,7 +106,7 @@ app.layout = html.Div(children=[
                                 className="two columns indicator pretty_container",
                                 children=[
                                     html.P(id="market-returns", className="indicator_value"),
-                                    html.P('Market Returns', className="twelve columns indicator_text"),
+                                    html.P('Mkt Returns', className="twelve columns indicator_text"),
                                 ]
                             ),
                             #Strategy vs market
@@ -111,7 +115,7 @@ app.layout = html.Div(children=[
                                 className="two columns indicator pretty_container",
                                 children=[
                                     html.P(id="strat-vs-market", className="indicator_value"),
-                                    html.P('Strategy vs. Market', className="twelve columns indicator_text"),
+                                    html.P('Stgy vs. Mkt', className="twelve columns indicator_text"),
                                 ]
                             ),
                         ]                   
@@ -125,8 +129,9 @@ app.layout = html.Div(children=[
                 dcc.Graph(
                     id="monthly-chart",
                     figure={
-                        'data': []
-                     }
+                        'data': [],
+
+                     },
                 )
             ]    
         ),
@@ -183,13 +188,15 @@ app.layout = html.Div(children=[
             )
     ])        
 ])
+
+#******************CALL BACK FUNCTIONS*******************************
 def calc_returns_over_month(dff):
     out = []
 
     for name, group in dff.groupby('YearMonth'):
         exit_balance = group.head(1)['Exit balance'].values[0]
         entry_balance = group.tail(1)['Entry balance'].values[0]
-        monthly_return = (exit_balance*100 / entry_balance)-100
+        monthly_return = (exit_balance*100) / (entry_balance)-100
         out.append({
             'month': name,
             'entry': entry_balance,
@@ -197,7 +204,6 @@ def calc_returns_over_month(dff):
             'monthly_return': monthly_return
         })
     return out
-
 
 def calc_btc_returns(dff):
     btc_start_value = dff.tail(1)['BTC Price'].values[0]
@@ -229,15 +235,12 @@ def filter_df(d,m=None, e=None, s_date=None, e_date=None):
     else:
         m= [m]
     
-    ret =  d[ (d['Entry time']>=  s_date) & (d['Entry time']<=e_date) & (d['Exchange'].isin(e)) & (d['Margin'].isin(m))  ]
+    ret =  d[ (d['Entry time']>=  s_date) & (d['Entry time']<=e_date) & (d['Exchange'].isin(e)) & \
+        (d['Margin'].isin(m))  ]
     return ret
-
-
-
-
+#Call back function
 @app.callback(
-    [
-        
+    [        
         Output('market-returns', 'children'),
         Output('strat-returns', 'children'),
         Output('strat-vs-market', 'children'),
@@ -257,41 +260,35 @@ def filter_df(d,m=None, e=None, s_date=None, e_date=None):
     ]
 )
 def update_date(exchange_value, leverage_value, s_date_value, e_date_value, p_c, p_s):
-
+    #Filter data
     df_temp = filter_df(df, e=exchange_value, m=leverage_value, s_date=s_date_value, e_date=e_date_value )
     df_temp['YearMonth'] =  df_temp['Entry time'].dt.strftime('%y-%m')
+
     #Calc returns
-    data = calc_returns_over_month(df_temp)
     btc_returns = calc_btc_returns(df_temp)
     strat_returns = calc_strat_returns(df_temp)
     strat_vs_market = strat_returns - btc_returns
 
-    #candelstick data
-    df_agg_month = df_temp.groupby('YearMonth').agg({'Entry balance': 'min', 'Exit balance': 'max', 'Pnl (incl fees)': 'sum'}).reset_index()
-    data  = [ go.Candlestick(
-        high = df_agg_month['Entry balance'],
-        open = df_agg_month['Entry balance'],
-        close = df_agg_month['Exit balance'],
-        low =df_agg_month['Exit balance'],
-        x = df_agg_month['YearMonth']
+    #Candelstick data
+    df_agg_month = df_temp.groupby('YearMonth').agg({'Entry balance': 'first', \
+        'Exit balance': 'last', 'Pnl (incl fees)': 'sum'}).reset_index()
+    data_candlestick  = [ go.Candlestick(
+        high = df_agg_month['Exit balance'],
+        open = df_agg_month['Exit balance'],
+        close = df_agg_month['Entry balance'],
+        low =df_agg_month['Entry balance'],
+        x = df_agg_month['YearMonth'],
+        increasing_line_color='blue',
+        decreasing_line_color='red',
     )]
 
-    max_long = df_temp[df_temp['Trade type']=='Long']['Pnl (incl fees)'].abs().max()
-    max_short = df_temp[df_temp['Trade type']=='Short']['Pnl (incl fees)'].abs().max()
-
     #Bar plot
-    data_barplot  = [ 
-        go.Bar(
-            x = df_temp[df_temp['Trade type']=='Long']['YearMonth'],
-            y = (df_temp[df_temp['Trade type']=='Long']['Pnl (incl fees)'].apply(lambda z1: z1/(max_long))),
-            name='Long',
-        ) ,
-        go.Bar(
-            x = df_temp[df_temp['Trade type']=='Short']['YearMonth'],
-            y  = df_temp[df_temp['Trade type']=='Short']['Pnl (incl fees)'].apply(lambda z2: (z2/(max_short))),
-            name='Short',
-        ) 
-    ]
+    dict_var = []
+    for tad in  df_temp['Trade type'].unique():
+        dict_var.append({'x':list(df_temp[df_temp['Trade type']==tad]['YearMonth']), \
+            'y': list(df_temp[df_temp['Trade type']==tad]['Pnl (incl fees)']), \
+                'type': 'bar', 'name': tad})
+    data_barplot = dict_var
 
     #Line btc plot
     trace_btc = go.Scatter(
@@ -310,9 +307,14 @@ def update_date(exchange_value, leverage_value, s_date_value, e_date_value, p_c,
     data_balance = [trace_balance]
     
     return f'{btc_returns:0.2f}%',f'{strat_returns:0.2f}%' ,f'{strat_vs_market:0.2f}%', \
-         {'data': data ,'layout': {'title': 'Overview on Monthly Perfomance'}}, df_temp.iloc[p_c*p_s:(p_c+ 1)*p_s].to_dict('records'), {'data': data_barplot , 'layout': {'title': 'PnL vs Trade Type'}},  {'data': data_btc ,'layout': {'title': 'Overview on Monthly Perfomance'}},{'data': data_balance ,'layout': {'title': 'Balance over time'}}
-
-
+         {'data': data_candlestick ,'layout': {'title': 'Overview on Monthly Perfomance'}}, \
+             df_temp.iloc[p_c*p_s:(p_c+ 1)*p_s].to_dict('records'), \
+                 {'data': data_barplot , 'layout': {'title': 'PnL vs Trade Type'}},  \
+                     {'data': data_btc ,'layout': {'title': 'Overview on Monthly Perfomance'}},\
+                         {'data': data_balance ,'layout': {'title': 'Balance over time'}}
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    #app.run_server(debug=True)
+    app.run_server(debug=True, host="0.0.0.0", port="8080")
+
+
